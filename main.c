@@ -198,10 +198,9 @@ static ssize_t device_read(struct file *filep,
 typedef int (*hide_handler)(pid_t);
 
 void device_write_handler(char *message, 
-                          size_t message_len,
                           char *cmd,
-                          size_t cmd_len,
-                          hide_handler handler){
+                          hide_handler handler)
+{
 
     struct task_struct *tsk;
     pid_t ppid;
@@ -209,8 +208,8 @@ void device_write_handler(char *message,
     long pid;
     char *ptr, *qtr, *end;
 
-    ptr = message + cmd_len;         /* skip cmd */
-    end = message + message_len;
+    ptr = message + strlen(cmd) + 1;         /* skip cmd */
+    end = message + strlen(message);
 
     while(1){
         qtr = memchr(ptr, ',', end - ptr);
@@ -219,7 +218,7 @@ void device_write_handler(char *message,
 
             tsk = pid_task(find_vpid(pid), PIDTYPE_PID);
             if(!tsk){
-                if(!memcmp(cmd, "del", cmd_len) && pid == -1)   /* remove all hideproc */ 
+                if(!memcmp(cmd, "del", 3) && pid == -1)   /* remove all hideproc */ 
                     handler(pid);
                 break;
             }
@@ -268,11 +267,9 @@ static ssize_t device_write(struct file *filep,
         copy_from_user(message, buffer, len);
 
         if (!memcmp(message, add_message, sizeof(add_message) - 1)) {
-            device_write_handler(message, len, 
-                                 add_message, sizeof(add_message), hide_process);
+            device_write_handler(message, add_message, hide_process);
         } else if (!memcmp(message, del_message, sizeof(del_message) - 1)) {
-            device_write_handler(message, len, 
-                                 del_message, sizeof(del_message), unhide_process);
+            device_write_handler(message, del_message, unhide_process);
         } else {
             kfree(message);
             goto err;
