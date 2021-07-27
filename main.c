@@ -5,6 +5,7 @@
 #include <linux/module.h>
 #include <linux/proc_fs.h>
 #include <linux/pid.h>
+#include <linux/hashtable.h>
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("National Cheng Kung University, Taiwan");
@@ -76,10 +77,10 @@ void hook_remove(struct ftrace_hook *hook)
 
 typedef struct {
     pid_t id;
-    struct list_head list_node;
+    struct hlist_node node;
 } pid_node_t;
 
-LIST_HEAD(hidden_proc);
+DEFINE_HASHTABLE(hidden_proc, 4);
 
 typedef struct pid *(*find_ge_pid_func)(int nr, struct pid_namespace *ns);
 static find_ge_pid_func real_find_ge_pid;
@@ -88,8 +89,11 @@ static struct ftrace_hook hook;
 
 static bool is_hidden_proc(pid_t pid)
 {
-    pid_node_t *proc, *tmp_proc;
-    list_for_each_entry_safe (proc, tmp_proc, &hidden_proc, list_node) {
+    struct hlist_node *tmp;
+    pid_node_t *proc;
+    int bkt;
+
+    hash_for_each_safe(hidden_proc, bkt, tmp, proc, node){
         if (proc->id == pid)
             return true;
     }
@@ -115,27 +119,32 @@ static void init_hook(void)
 
 static int hide_process(pid_t pid)
 {
+    pid_node_t *proc;
+
     if(is_hidden_proc(pid))
         return -EINVAL;
 
-    pid_node_t *proc = kmalloc(sizeof(pid_node_t), GFP_KERNEL);
+    proc = kmalloc(sizeof(pid_node_t), GFP_KERNEL);
     proc->id = pid;
-    list_add_tail(&proc->list_node, &hidden_proc);
+    hash_add(hidden_proc, &proc->node, proc->id);
     return SUCCESS;
 }
 
 static int unhide_process(pid_t pid)
 {
-    pid_node_t *proc, *tmp_proc;
+    struct hlist_node *tmp;
+    pid_node_t *proc;
+    int bkt;
+
     if(pid == -1){
-        list_for_each_entry_safe (proc, tmp_proc, &hidden_proc, list_node) {
-            list_del(&proc->list_node);
+        hash_for_each_safe(hidden_proc, bkt, tmp, proc, node){
+            hash_del(&proc->node);
             kfree(proc);
         }
     } else {
-        list_for_each_entry_safe (proc, tmp_proc, &hidden_proc, list_node) {
+        hash_for_each_safe(hidden_proc, bkt, tmp, proc, node){
             if(proc->id == pid){
-                list_del(&proc->list_node);
+                hash_del(&proc->node);
                 kfree(proc);
             }
         }
@@ -162,17 +171,20 @@ static ssize_t device_read(struct file *filep,
                            size_t len,
                            loff_t *offset)
 {
-    pid_node_t *proc, *tmp_proc;
+    struct hlist_node *tmp;
+    pid_node_t *proc;
+    int bkt;
     char message[MAX_MESSAGE_SIZE];
     if (*offset)
         return 0;
 
-    list_for_each_entry_safe (proc, tmp_proc, &hidden_proc, list_node) {
+    hash_for_each_safe(hidden_proc, bkt, tmp, proc, node){
         memset(message, 0, MAX_MESSAGE_SIZE);
         sprintf(message, OUTPUT_BUFFER_FORMAT, proc->id);
         copy_to_user(buffer + *offset, message, strlen(message));
         *offset += strlen(message);
     }
+
     return *offset;
 }
 
