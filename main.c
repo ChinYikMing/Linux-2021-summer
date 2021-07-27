@@ -136,6 +136,11 @@ static int unhide_process(pid_t pid)
     pid_node_t *proc;
     int bkt;
 
+    if(hash_empty(hidden_proc)){
+        pr_info("hash table is empty\n");
+        return -ENOENT;
+    }
+
     if(pid == -1){
         hash_for_each_safe(hidden_proc, bkt, tmp, proc, node){
             hash_del(&proc->node);
